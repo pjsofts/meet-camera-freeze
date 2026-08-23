@@ -2,13 +2,13 @@
 
 Freeze your camera in Google Meet with one keystroke — and keep looking alive.
 
-Instead of a suspiciously motionless still, the extension replays **the last 5 seconds
-of you** on a loop: you're still breathing, blinking, shifting in your chair. Your mic,
+Instead of a suspiciously motionless still, the extension replays **the last minute of
+you** on a loop: you're still breathing, blinking, shifting in your chair. Your mic,
 screen share, chat and the rest of the call carry on exactly as before. Hit the key
 again and you're live.
 
 ```
-Alt + Shift + F        →   ❄  looping the last 5 seconds
+Alt + Shift + F        →   ❄  looping the last minute
 Alt + Shift + F        →   ●  live
 ```
 
@@ -23,7 +23,7 @@ there. Freeze holds your presence steady while you step out of frame.
 
 ## Features
 
-- **Looks alive** — replays a rolling 5-second clip rather than a frozen photograph
+- **Looks alive** — replays a rolling one-minute clip rather than a frozen photograph
 - **Seamless hand-off** — the loop begins with footage that ends at the exact moment
   you froze, so there is no visible jump when it kicks in
 - **One keystroke** — `Alt+Shift+F` toggles freeze from anywhere in the Meet tab
@@ -60,13 +60,14 @@ Works in Chrome, Edge, Brave, Arc and other Chromium browsers with Manifest V3.
 | **● Live / ❄ Looping** pill | Top-right corner of the meeting page |
 | Toolbar popup | Click the extension icon |
 
-Freezing captures the seconds leading up to that instant and loops them. Unfreezing
+Freezing captures the footage leading up to that instant and loops it. Unfreezing
 resumes the live camera. The toolbar badge shows **❄** whenever a tab is frozen, so you
 can never forget you left it on.
 
 Two modes, switchable in the popup:
 
-- **Loop 5s** *(default)* — replays your recent footage; movement, blinking, breathing
+- **Loop 1m** *(default)* — replays up to a minute of your recent footage; movement,
+  blinking, breathing
 - **Still frame** — holds the single frame you froze on; no recording happens at all
 
 Prefer a different shortcut? Set it at `chrome://extensions/shortcuts`.
@@ -91,13 +92,21 @@ track never stops, never stalls and never needs renegotiating. That is why the o
 side sees a convincing loop rather than a frozen-then-dropped video tile.
 
 **The rolling buffer.** While you are live, a `MediaRecorder` continuously records the
-camera in 5-second segments and keeps only the newest finished one. The moment you
+camera in one-minute segments and keeps only the newest finished one. The moment you
 freeze, the in-flight segment is cut short and handed over immediately — so the loop
 you start playing is footage that ends at the exact instant you pressed the key, and
-the transition is invisible. If that fragment is too short to be useful, the previous
-complete segment is used instead; if there is no clip at all yet (you froze within the
-first seconds of the call), it falls back to a still frame. Recording pauses entirely
-while you are frozen, so the buffer never captures your empty chair.
+the transition is invisible.
+
+That fresh cut is only as long as the time since its segment began, so there is a
+choice to make. If it runs 30 seconds or more it wins on continuity. If it is a shorter
+stub, the previous *complete* minute is used instead — a minute old, but a far better
+loop. And if there is no clip at all yet (you froze within the first seconds of the
+call), it falls back to a still frame. In practice the loop is between 30 and 60
+seconds long.
+
+Recording pauses entirely while you are frozen, so the buffer never captures your empty
+chair, and at most two minutes of footage — a few tens of megabytes — exist in memory at
+any moment.
 
 **Track fidelity.** The wrapper track forwards everything Meet actually inspects —
 `label`, `getSettings()`, `getCapabilities()`, `applyConstraints()`, `enabled` and
@@ -124,8 +133,8 @@ Reload the Meet tab. The camera patch has to be installed before Meet requests t
 camera, so tabs opened before the extension was loaded aren't covered.
 
 **It held a still instead of looping.**
-There was no usable clip yet — you froze within the first few seconds of the call, or
-your browser has no `MediaRecorder` support for WebM. Wait a few seconds and try again.
+There was no usable clip yet — you froze within the first seconds of the call, or your
+browser has no `MediaRecorder` support for WebM. Wait a few seconds and try again.
 
 **The loop restart is noticeable.**
 Freeze during a quiet moment — the seam is invisible when you start and end in a
@@ -146,9 +155,8 @@ in the popup to remove it completely.
 ## Privacy
 
 The extension has no network permissions and makes no requests. Nothing is uploaded and
-nothing is written to disk — the rolling clip lives in memory in your own tab for at
-most a few seconds, is overwritten continuously, and is discarded the moment you
-unfreeze or close the tab. Host access is limited to `https://meet.google.com/*`.
+nothing is written to disk — the rolling clip lives in memory in your own tab, is
+overwritten every minute, and is discarded the moment you unfreeze or close the tab. Host access is limited to `https://meet.google.com/*`.
 
 ## Contributing
 

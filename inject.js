@@ -3,17 +3,18 @@
  * It wraps navigator.mediaDevices.getUserMedia so every camera track Meet
  * receives is actually a canvas capture of the real camera.
  *
- * While "frozen" the canvas replays a loop of the last few seconds of you
- * (falling back to a single still frame if no clip is available yet), so the
- * track stays live at full frame rate and the call is undisturbed.
+ * While "frozen" the canvas replays a loop of the last minute of you (falling
+ * back to a single still frame if no clip is available yet), so the track stays
+ * live at full frame rate and the call is undisturbed.
  */
 (() => {
   if (window.__mcfInstalled) return;
   window.__mcfInstalled = true;
 
-  const LOOP_SECONDS = 5;
+  const LOOP_SECONDS = 60;
   const SEGMENT_MS = LOOP_SECONDS * 1000;
-  const MIN_CLIP_MS = 1500; // shorter than this and a replay looks like a stutter
+  const MIN_CLIP_MS = 1500;                    // shorter than this and a replay looks like a stutter
+  const PREFER_FRESH_MS = SEGMENT_MS / 2;      // below this, an older but full-length clip wins
 
   const REC_MIME = (window.MediaRecorder && [
     'video/webm;codecs=vp9',
@@ -110,7 +111,7 @@
         if (pendingFlush) {
           const resolve = pendingFlush;
           pendingFlush = null;
-          resolve(blob && duration >= MIN_CLIP_MS ? blob : null);
+          resolve(blob && duration >= MIN_CLIP_MS ? { blob, duration } : null);
           return;
         }
         if (blob && !state.frozen) newestClip = blob;
@@ -125,7 +126,7 @@
     }
 
     // Stop the in-flight segment and hand back what it captured, so the loop
-    // starts from footage that ends at the exact moment you froze.
+    // can start from footage that ends at the exact moment you froze.
     function flushSegment() {
       clearTimeout(segmentTimer);
       return new Promise((resolve) => {
@@ -166,7 +167,13 @@
 
     async function beginReplay() {
       const token = ++freezeToken;
-      const clip = (await flushSegment()) || newestClip;
+      // The fresh cut ends exactly at the freeze, but is only as long as the
+      // time since this segment started. If that is a short stub, the previous
+      // complete minute makes a better loop even though it is a minute old.
+      const fresh = await flushSegment();
+      const clip = (fresh && (fresh.duration >= PREFER_FRESH_MS || !newestClip))
+        ? fresh.blob
+        : (newestClip || (fresh && fresh.blob));
       if (!clip || token !== freezeToken || !state.frozen || state.mode !== 'loop') return;
       const el = document.createElement('video');
       el.muted = true;

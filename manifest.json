@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Meet Camera Freeze",
-  "version": "1.1.0",
-  "description": "Freeze your camera in Google Meet on command - loops the last 5 seconds of you so you can step away unnoticed.",
+  "version": "1.2.0",
+  "description": "Freeze your camera in Google Meet on command - loops the last minute of you so you can step away unnoticed.",
   "permissions": ["activeTab"],
   "host_permissions": ["https://meet.google.com/*"],
   "background": { "service_worker": "background.js" },
