@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; width: 220px; font: 13px/1.4 system-ui, Roboto, Arial, sans-serif;
+         padding: 14px; color: #202124; background: #fff; }
+  h1 { font-size: 13px; margin: 0 0 10px; font-weight: 600; }
+  button { width: 100%; padding: 10px; border: 0; border-radius: 8px; cursor: pointer;
+           font-size: 14px; font-weight: 600; color: #fff; background: #5f6368; }
+  button.frozen { background: #1a73e8; }
+  p { margin: 10px 0 0; color: #5f6368; font-size: 11px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #202124; color: #e8eaed; }
+    p { color: #9aa0a6; }
+  }
+</style>
+<h1>Meet Camera Freeze</h1>
+<button id="toggle">Loading…</button>
+<p id="hint">Shortcut: Alt+Shift+F · also works from the button in the Meet tab.</p>
+<script src="popup.js"></script>
