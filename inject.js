@@ -1,19 +1,33 @@
 /*
  * Runs in the page's MAIN world at document_start, before Meet's own scripts.
  * It wraps navigator.mediaDevices.getUserMedia so every camera track Meet
- * receives is actually a canvas capture of the real camera. Freezing just means
- * "keep painting the last snapshot instead of new frames", so the track stays
- * live and the call keeps running - remote participants simply see a still.
+ * receives is actually a canvas capture of the real camera.
+ *
+ * While "frozen" the canvas replays a loop of the last few seconds of you
+ * (falling back to a single still frame if no clip is available yet), so the
+ * track stays live at full frame rate and the call is undisturbed.
  */
 (() => {
   if (window.__mcfInstalled) return;
   window.__mcfInstalled = true;
 
-  const state = { frozen: false };
+  const LOOP_SECONDS = 5;
+  const SEGMENT_MS = LOOP_SECONDS * 1000;
+  const MIN_CLIP_MS = 1500; // shorter than this and a replay looks like a stutter
+
+  const REC_MIME = (window.MediaRecorder && [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm'
+  ].find((m) => MediaRecorder.isTypeSupported(m))) || null;
+
+  const state = { frozen: false, mode: 'loop', looping: false };
   const pipes = new Set();
 
   function broadcast() {
-    window.dispatchEvent(new CustomEvent('MCF_STATE', { detail: { frozen: state.frozen } }));
+    window.dispatchEvent(new CustomEvent('MCF_STATE', {
+      detail: { frozen: state.frozen, mode: state.mode, looping: state.looping }
+    }));
     paintButton();
   }
 
@@ -21,7 +35,17 @@
     next = !!next;
     if (next !== state.frozen) {
       state.frozen = next;
+      state.looping = false;
       for (const pipe of pipes) pipe.onFreezeChange();
+    }
+    broadcast();
+  }
+
+  function setMode(mode) {
+    if (mode !== 'loop' && mode !== 'still') return;
+    if (mode !== state.mode) {
+      state.mode = mode;
+      for (const pipe of pipes) pipe.onModeChange();
     }
     broadcast();
   }
@@ -45,13 +69,136 @@
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Holds the still we keep re-painting while frozen.
+    // The still we repaint while frozen with no clip to loop.
     const still = document.createElement('canvas');
     const stillCtx = still.getContext('2d', { alpha: false });
 
     const fps = Math.min(60, Math.max(1, Math.round(settings.frameRate || 30)));
     const outStream = canvas.captureStream(fps);
     const outTrack = outStream.getVideoTracks()[0];
+
+    /* --- rolling recording of the recent past --- */
+
+    let newestClip = null;   // most recent finished segment
+    let recorder = null;
+    let chunks = [];
+    let segmentTimer = null;
+    let pendingFlush = null;
+    let disposed = false;
+
+    function startSegment() {
+      if (disposed || state.frozen || state.mode !== 'loop') return;
+      if (!REC_MIME || sourceTrack.readyState !== 'live') return;
+      let rec;
+      try {
+        rec = new MediaRecorder(new MediaStream([sourceTrack]), {
+          mimeType: REC_MIME,
+          videoBitsPerSecond: 2500000
+        });
+      } catch (e) {
+        return; // recording unavailable - still-frame mode still works
+      }
+      recorder = rec;
+      chunks = [];
+      const startedAt = Date.now();
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        const blob = chunks.length ? new Blob(chunks, { type: REC_MIME }) : null;
+        const duration = Date.now() - startedAt;
+        chunks = [];
+        if (recorder === rec) recorder = null;
+        if (pendingFlush) {
+          const resolve = pendingFlush;
+          pendingFlush = null;
+          resolve(blob && duration >= MIN_CLIP_MS ? blob : null);
+          return;
+        }
+        if (blob && !state.frozen) newestClip = blob;
+        startSegment();
+      };
+      try { rec.start(); } catch (e) { recorder = null; return; }
+      segmentTimer = setTimeout(() => {
+        if (recorder === rec && rec.state === 'recording') {
+          try { rec.stop(); } catch (e) {}
+        }
+      }, SEGMENT_MS);
+    }
+
+    // Stop the in-flight segment and hand back what it captured, so the loop
+    // starts from footage that ends at the exact moment you froze.
+    function flushSegment() {
+      clearTimeout(segmentTimer);
+      return new Promise((resolve) => {
+        if (!recorder || recorder.state !== 'recording') return resolve(null);
+        pendingFlush = resolve;
+        try { recorder.stop(); } catch (e) { pendingFlush = null; resolve(null); }
+      });
+    }
+
+    function stopRecording() {
+      clearTimeout(segmentTimer);
+      pendingFlush = null;
+      if (recorder && recorder.state === 'recording') {
+        try { recorder.stop(); } catch (e) {}
+      }
+      recorder = null;
+      chunks = [];
+    }
+
+    /* --- replay --- */
+
+    let replay = null;      // <video> playing the loop
+    let replayUrl = null;
+    let freezeToken = 0;
+
+    function teardownReplay() {
+      state.looping = false;
+      if (replay) {
+        try { replay.pause(); } catch (e) {}
+        replay.src = '';
+        replay = null;
+      }
+      if (replayUrl) {
+        URL.revokeObjectURL(replayUrl);
+        replayUrl = null;
+      }
+    }
+
+    async function beginReplay() {
+      const token = ++freezeToken;
+      const clip = (await flushSegment()) || newestClip;
+      if (!clip || token !== freezeToken || !state.frozen || state.mode !== 'loop') return;
+      const el = document.createElement('video');
+      el.muted = true;
+      el.loop = true;
+      el.playsInline = true;
+      el.autoplay = true;
+      replayUrl = URL.createObjectURL(clip);
+      el.src = replayUrl;
+      // Some MediaRecorder output has no duration metadata; looping by hand
+      // covers the case where the loop attribute alone does not fire.
+      el.addEventListener('ended', () => {
+        try { el.currentTime = 0; el.play(); } catch (e) {}
+      });
+      try {
+        await el.play();
+      } catch (e) {
+        URL.revokeObjectURL(replayUrl);
+        replayUrl = null;
+        return;
+      }
+      if (token !== freezeToken || !state.frozen) {
+        try { el.pause(); } catch (e) {}
+        URL.revokeObjectURL(replayUrl);
+        replayUrl = null;
+        return;
+      }
+      replay = el;
+      state.looping = true;
+      broadcast();
+    }
+
+    /* --- draw loop --- */
 
     function snapshot() {
       if (!canvas.width || !canvas.height) return;
@@ -62,9 +209,12 @@
 
     function tick() {
       if (state.frozen) {
-        // Re-paint the frozen frame so captureStream keeps producing frames
-        // (a track that stops producing can be dropped by the encoder).
-        if (still.width) ctx.drawImage(still, 0, 0, canvas.width, canvas.height);
+        // Keep painting so captureStream never stops producing frames.
+        if (replay && replay.readyState >= 2) {
+          ctx.drawImage(replay, 0, 0, canvas.width, canvas.height);
+        } else if (still.width) {
+          ctx.drawImage(still, 0, 0, canvas.width, canvas.height);
+        }
         return;
       }
       if (video.readyState < 2 || !video.videoWidth) return;
@@ -79,12 +229,32 @@
 
     const pipe = {
       onFreezeChange() {
-        if (state.frozen) snapshot();
+        if (state.frozen) {
+          snapshot();               // instant still, replaced by the loop moments later
+          if (state.mode === 'loop') beginReplay();
+          else stopRecording();
+        } else {
+          freezeToken++;
+          teardownReplay();
+          startSegment();
+        }
+      },
+      onModeChange() {
+        if (state.mode === 'still') {
+          freezeToken++;
+          teardownReplay();
+          stopRecording();
+        } else if (!state.frozen) {
+          startSegment();
+        }
       },
       dispose() {
-        if (!pipes.has(pipe)) return;
+        if (disposed) return;
+        disposed = true;
         pipes.delete(pipe);
         clearInterval(timer);
+        stopRecording();
+        teardownReplay();
         try { video.pause(); } catch (e) {}
         video.srcObject = null;
         try { sourceTrack.stop(); } catch (e) {}
@@ -92,6 +262,7 @@
     };
     pipes.add(pipe);
     if (state.frozen) snapshot();
+    startSegment();
 
     sourceTrack.addEventListener('ended', () => {
       pipe.dispose();
@@ -166,11 +337,13 @@
     if (action === 'toggle') setFrozen(!state.frozen);
     else if (action === 'freeze') setFrozen(true);
     else if (action === 'unfreeze') setFrozen(false);
+    else if (action === 'mode:loop') setMode('loop');
+    else if (action === 'mode:still') setMode('still');
     else if (action === 'query') broadcast();
   });
 
   window.addEventListener('keydown', (e) => {
-    if (e.altKey && e.shiftKey && (e.code === 'KeyF' || e.key.toLowerCase() === 'f')) {
+    if (e.altKey && e.shiftKey && (e.code === 'KeyF' || String(e.key).toLowerCase() === 'f')) {
       e.preventDefault();
       e.stopPropagation();
       setFrozen(!state.frozen);
@@ -183,7 +356,9 @@
 
   function paintButton() {
     if (!button) return;
-    button.textContent = state.frozen ? '❄ Frozen' : '● Live';
+    button.textContent = state.frozen
+      ? (state.looping ? '❄ Looping' : '❄ Frozen')
+      : '● Live';
     button.style.background = state.frozen ? '#1a73e8' : 'rgba(32,33,36,.85)';
   }
 

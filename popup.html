@@ -1,19 +1,29 @@
 <!doctype html>
 <meta charset="utf-8">
 <style>
-  body { margin: 0; width: 220px; font: 13px/1.4 system-ui, Roboto, Arial, sans-serif;
-         padding: 14px; color: #202124; background: #fff; }
+  body { margin: 0; width: 236px; padding: 14px; color: #202124; background: #fff;
+         font: 13px/1.4 system-ui, Roboto, Arial, sans-serif; }
   h1 { font-size: 13px; margin: 0 0 10px; font-weight: 600; }
-  button { width: 100%; padding: 10px; border: 0; border-radius: 8px; cursor: pointer;
-           font-size: 14px; font-weight: 600; color: #fff; background: #5f6368; }
-  button.frozen { background: #1a73e8; }
+  #toggle { width: 100%; padding: 11px; border: 0; border-radius: 8px; cursor: pointer;
+            font-size: 14px; font-weight: 600; color: #fff; background: #5f6368; }
+  #toggle.frozen { background: #1a73e8; }
+  .modes { display: flex; gap: 6px; margin-top: 10px; }
+  .modes button { flex: 1; padding: 7px 0; font-size: 12px; border-radius: 6px; cursor: pointer;
+                  border: 1px solid #dadce0; background: transparent; color: inherit; }
+  .modes button.on { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
   p { margin: 10px 0 0; color: #5f6368; font-size: 11px; }
   @media (prefers-color-scheme: dark) {
     body { background: #202124; color: #e8eaed; }
     p { color: #9aa0a6; }
+    .modes button { border-color: #5f6368; }
+    .modes button.on { background: #1f3350; border-color: #8ab4f8; color: #8ab4f8; }
   }
 </style>
 <h1>Meet Camera Freeze</h1>
 <button id="toggle">Loading…</button>
-<p id="hint">Shortcut: Alt+Shift+F · also works from the button in the Meet tab.</p>
+<div class="modes">
+  <button id="mode-loop" title="Replay the last 5 seconds on a loop">Loop 5s</button>
+  <button id="mode-still" title="Hold a single still frame">Still frame</button>
+</div>
+<p id="hint">Shortcut: Alt+Shift+F · also works from the pill in the Meet tab.</p>
 <script src="popup.js"></script>
