@@ -158,6 +158,14 @@ The extension has no network permissions and makes no requests. Nothing is uploa
 nothing is written to disk — the rolling clip lives in memory in your own tab, is
 overwritten every minute, and is discarded the moment you unfreeze or close the tab. Host access is limited to `https://meet.google.com/*`.
 
+## Tests
+
+```bash
+node --test tests/manifest.test.mjs   # manifest checks: MV3, referenced files exist, Meet-only, Alt+Shift+F
+```
+
+CI runs them on every push.
+
 ## Contributing
 
 Issues and pull requests welcome. Edit a file, hit reload on `chrome://extensions`,
